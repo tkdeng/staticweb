@@ -36,6 +36,8 @@ type Config struct {
 	}
 
 	layout map[string][]byte
+
+	isHomePage bool
 }
 
 //go:embed templates/layout.html
@@ -95,6 +97,8 @@ func Compile(src, dist string /* , page ...string */) error {
 		layout: map[string][]byte{
 			"layout": templateBody,
 		},
+
+		isHomePage: true,
 	}, func() { wg.Add(1) }, func() { wg.Done() }, &compErr)
 
 	wg.Wait()
@@ -190,6 +194,23 @@ func compilePage(src, dist string, config *Config, wgAdd func(), wgDone func(), 
 		pageConfig.Scripts = append(pageConfig.Scripts, pageOnlyConfig.Scripts...)
 	}
 
+	pageConfig.isHomePage = config.isHomePage
+	config.isHomePage = false
+
+	if pageConfig.Meta["page"] == "" {
+		pageConfig.Meta["page"] = pageConfig.Meta["title"]
+	}
+
+	if /* !pageConfig.isHomePage */ pageConfig.Meta["title"] != "" && pageConfig.Meta["sitetitle"] != "" && pageConfig.Meta["title"] != pageConfig.Meta["sitetitle"] {
+		pageConfig.Meta["title"] = pageConfig.Meta["title"] + " | " + pageConfig.Meta["sitetitle"]
+	} else if pageConfig.Meta["title"] == "" {
+		pageConfig.Meta["title"] = pageConfig.Meta["sitetitle"]
+	}
+
+	if pageConfig.isHomePage {
+		//todo: generate manifest.json (may use separate function)
+	}
+
 	os.Mkdir(dist, 0755)
 
 	wgAdd()
@@ -197,6 +218,8 @@ func compilePage(src, dist string, config *Config, wgAdd func(), wgDone func(), 
 		defer wgDone()
 		compilePageDist(src, dist, &pageConfig, compErr)
 	}()
+
+	//todo: remove unused subpages from dist
 
 	for _, dir := range dirList {
 		compilePage(src+"/"+dir, dist+"/"+dir, config, wgAdd, wgDone, compErr)
@@ -217,7 +240,12 @@ func compilePageDist(src, dist string, config *Config, compErr *error) {
 	file.Write(templateLayout)
 	file.Sync()
 
-	usedMetaVars := []string{}
+	usedMetaVars := []string{
+		"sitetitle",
+		"apptitle",
+		"title",
+		"page",
+	}
 
 	// write meta vars
 	regex.Comp(`\{([A-Za-z0-9]+)(:.*?|)\}`).RepFileFunc(file, func(data func(int) []byte) []byte {

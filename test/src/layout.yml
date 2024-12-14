@@ -1,4 +1,6 @@
 meta:
+  SiteTitle: "Site Title"
+  AppTitle: "Site App"
   title: "Site Title"
   desc: "Site Description"
   icon: "/favicon.png"
