@@ -384,6 +384,8 @@ func compilePageDist(src, dist string, config *Config, compErr *error) {
 }
 
 func compileHTML(buf *[]byte) {
+	//todo: add plugin support with shortcodes
+
 	if DebugMode {
 		return
 	}
