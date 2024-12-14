@@ -1,0 +1,20 @@
+meta:
+  title: "Site Title"
+  desc: "Site Description"
+  icon: "/favicon.png"
+
+styles:
+  - url: "/style.css"
+    lazy: true
+  - url: "/print.css"
+    print: true
+
+scripts:
+  - url: "/script.js"
+    defer: true
+    async: true
+  - url: "/mod.js"
+    module: true
+
+vars:
+  key: value
