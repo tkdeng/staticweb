@@ -48,6 +48,8 @@ var templateBody []byte
 
 var DebugMode bool = false
 
+var TemplateMode bool = false
+
 func init() {
 	if len(os.Args) > 1 && strings.HasPrefix(os.Args[0], "/tmp/go-build") && strings.HasPrefix(os.Args[1], "-test") {
 		DebugMode = true
@@ -99,14 +101,14 @@ func Compile(src, dist string /* , page ...string */) error {
 		},
 
 		isHomePage: true,
-	}, func() { wg.Add(1) }, func() { wg.Done() }, &compErr)
+	}, func() { wg.Add(1) }, func() { wg.Done() }, &compErr, true)
 
 	wg.Wait()
 
 	return compErr
 }
 
-func compilePage(src, dist string, config *Config, wgAdd func(), wgDone func(), compErr *error) {
+func compilePage(src, dist string, config *Config, wgAdd func(), wgDone func(), compErr *error, init bool) {
 	// load layout config
 	goutil.ReadConfig(src+"/layout.yml", config)
 
@@ -211,24 +213,34 @@ func compilePage(src, dist string, config *Config, wgAdd func(), wgDone func(), 
 		//todo: generate manifest.json (may use separate function)
 	}
 
-	os.Mkdir(dist, 0755)
+	if TemplateMode && !init && len(dirList) != 0 {
+		os.Mkdir(dist, 0755)
+	} else if !TemplateMode {
+		os.Mkdir(dist, 0755)
+	}
 
 	wgAdd()
 	go func() {
 		defer wgDone()
-		compilePageDist(src, dist, &pageConfig, compErr)
+		compilePageDist(src, dist, &pageConfig, compErr, init)
 	}()
 
 	//todo: remove unused subpages from dist
 
 	for _, dir := range dirList {
-		compilePage(src+"/"+dir, dist+"/"+dir, config, wgAdd, wgDone, compErr)
+		compilePage(src+"/"+dir, dist+"/"+dir, config, wgAdd, wgDone, compErr, false)
 	}
 }
 
-func compilePageDist(src, dist string, config *Config, compErr *error) {
+func compilePageDist(src, dist string, config *Config, compErr *error, init bool) {
+	distFile := dist + "/index.html"
+
+	if TemplateMode && !init {
+		distFile = dist + ".html"
+	}
+
 	// open dist file
-	file, err := os.OpenFile(dist+"/index.html", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0755)
+	file, err := os.OpenFile(distFile, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0755)
 	if err != nil {
 		// fmt.Println(err)
 		*compErr = errors.Join(*compErr, err)
