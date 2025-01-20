@@ -33,6 +33,7 @@ type Config struct {
 		Module bool
 		Defer  bool
 		Async  bool
+		Wasm   string
 	}
 
 	layout map[string][]byte
@@ -314,6 +315,8 @@ func compilePageDist(src, dist string, config *Config, compErr *error, init bool
 
 		if script.Module {
 			html = append(html, []byte(` type="module"`)...)
+		} else if script.Wasm != "" {
+			html = append(html, []byte(` type="wasm/`+script.Wasm+`"`)...)
 		}
 
 		if script.Defer {
