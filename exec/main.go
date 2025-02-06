@@ -51,7 +51,6 @@ func main() {
 		return
 	}
 
-	//todo: listen on port
 	staticweb.Live(src, out)
 
 	fs := http.FileServer(http.Dir(out))
@@ -68,7 +67,7 @@ func main() {
 						http.ServeFile(w, r, path)
 						return
 					}
-				}else if path, err := goutil.JoinPath(out, "404.html"); err == nil {
+				} else if path, err := goutil.JoinPath(out, "404.html"); err == nil {
 					if _, err := os.Stat(path); err == nil {
 						http.ServeFile(w, r, path)
 						return
