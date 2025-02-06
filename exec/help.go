@@ -20,7 +20,8 @@ func printHelp() {
 	fmt.Println(goutil.ToColumns([][]string{
 		{"\nUsage: staticweb [src] [options...]\n"},
 		{"--src, --root", "source dicectory."},
-		{"--out, --o", "output directory. (defaults to 'dist' just outside the source directory)."},
+		{"--out", "output directory. (defaults to 'dist' just outside the source directory)."},
+		{"--port, -l", "run live server on port. (defaults to '3000')."},
 		{"--help, -h", "print this list."},
 	}, tSize, "    ", "\n\n"))
 }

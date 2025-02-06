@@ -41,6 +41,15 @@ import (
 func main(){
   // compile directory
   err := staticweb.Compile("./src", "./dist")
+
+  // compile specific page/directory
+  err := staticweb.Compile("./src", "./dist", "/about")
+
+  // compile and watch for file changes
+  fileWatcher := staticweb.Live("./src", "./dist", func(err error){
+    // handle errors
+    fmt.Println(err)
+  })
 }
 ```
 
@@ -48,4 +57,8 @@ func main(){
 
 ```shell
 staticweb ./src --out="./dist"
+
+# optional: run live server
+staticweb ./src 3000
+staticweb ./src --live # default port: 3000
 ```

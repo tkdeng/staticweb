@@ -2,10 +2,12 @@ package staticweb
 
 import (
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	_ "embed"
 
@@ -60,7 +62,98 @@ func init() {
 	compileHTML(&templateBody)
 }
 
-func Compile(src, dist string /* , page ...string */) error {
+func Live(src, dist string, handleErr ...func(err error)) *goutil.FSWatcher {
+	if len(handleErr) == 0 {
+		handleErr = append(handleErr, func(err error) {
+			log.Println(err)
+		})
+	}
+
+	if path, err := filepath.Abs(src); err == nil {
+		src = path
+	}
+
+	if path, err := filepath.Abs(dist); err == nil {
+		dist = path
+	}
+
+	err := Compile(src, dist)
+	if err != nil {
+		handleErr[0](err)
+	}
+
+	lastChange := time.Now().UnixMilli()
+
+	fw := goutil.FileWatcher()
+
+	fw.OnFileChange = func(path, op string) {
+		now := time.Now().UnixMilli()
+		if now-lastChange < 10 {
+			return
+		}
+		lastChange = now
+
+		path = filepath.Dir(strings.TrimPrefix(path, src))
+
+		if path == "/" || path == "" {
+			if err := Compile(src, dist); err != nil {
+				handleErr[0](err)
+			}
+		} else {
+			if err := Compile(src, dist, path); err != nil {
+				handleErr[0](err)
+			}
+		}
+	}
+
+	fw.OnDirAdd = func(path, op string) (addWatcher bool) {
+		now := time.Now().UnixMilli()
+		if now-lastChange < 10 {
+			return
+		}
+		lastChange = now
+
+		path = strings.TrimPrefix(path, src)
+
+		if err := Compile(src, dist, path); err != nil {
+			handleErr[0](err)
+		}
+		return true
+	}
+
+	fw.OnRemove = func(path, op string) (removeWatcher bool) {
+		now := time.Now().UnixMilli()
+		if now-lastChange < 10 {
+			return
+		}
+		lastChange = now
+
+		if strings.HasSuffix(path, ".html") || strings.HasSuffix(path, ".md") || strings.HasSuffix(path, ".yml") || strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".json") || strings.HasSuffix(path, ".cson") {
+			path = filepath.Dir(strings.TrimPrefix(path, src))
+
+			if path == "/" || path == "" {
+				if err := Compile(src, dist); err != nil {
+					handleErr[0](err)
+				}
+			} else {
+				if err := Compile(src, dist, path); err != nil {
+					handleErr[0](err)
+				}
+			}
+		} else if distPath := strings.Replace(path, src, dist, 1); distPath != path {
+			if err := os.RemoveAll(distPath); err != nil {
+				handleErr[0](err)
+			}
+		}
+		return true
+	}
+
+	fw.WatchDir(src)
+
+	return fw
+}
+
+func Compile(src, dist string, page ...string) error {
 	if path, err := filepath.Abs(src); err == nil {
 		src = path
 	}
@@ -75,22 +168,10 @@ func Compile(src, dist string /* , page ...string */) error {
 
 	os.MkdirAll(dist, 0755)
 
-	//todo: add ability to recompile individual pages
-	/* if len(page) != 0 {
-		if page[0] != "" && page[0] != "/" {
-			path, err := goutil.JoinPath(src, page[0])
-			if err != nil {
-				return err
-			}
-			src = path
-
-			path, err = goutil.JoinPath(dist, page[0])
-			if err != nil {
-				return err
-			}
-			dist = path
-		}
-	} */
+	var compPage []string
+	if len(page) != 0 {
+		compPage = strings.Split(strings.Trim(page[0], "/"), "/")
+	}
 
 	var compErr error
 
@@ -102,14 +183,14 @@ func Compile(src, dist string /* , page ...string */) error {
 		},
 
 		isHomePage: true,
-	}, func() { wg.Add(1) }, func() { wg.Done() }, &compErr, true)
+	}, func() { wg.Add(1) }, func() { wg.Done() }, compPage, &compErr, true)
 
 	wg.Wait()
 
 	return compErr
 }
 
-func compilePage(src, dist string, config *Config, wgAdd func(), wgDone func(), compErr *error, init bool) {
+func compilePage(src, dist string, config *Config, wgAdd func(), wgDone func(), compPage []string, compErr *error, init bool) {
 	// load layout config
 	goutil.ReadConfig(src+"/layout.yml", config)
 
@@ -123,16 +204,26 @@ func compilePage(src, dist string, config *Config, wgAdd func(), wgDone func(), 
 		for _, file := range files {
 			name := file.Name()
 
+			/* if compPage != nil && len(compPage) != 0 {
+				if name != compPage[0] && strings.TrimSuffix(name, ".html") != compPage[0] && strings.TrimSuffix(name, ".md") != compPage[0] {
+					continue
+				}
+			} */
+
 			if file.IsDir() {
+				if compPage != nil && len(compPage) != 0 {
+					if name != compPage[0] || len(dirList) != 0 {
+						continue
+					}
+				}
+
 				dirList = append(dirList, name)
 			} else if (strings.HasSuffix(name, ".html") || strings.HasSuffix(name, ".md")) && !strings.HasPrefix(name, "@") {
 				if buf, err := os.ReadFile(src + "/" + name); err == nil {
-
 					// grab beginning yml config
 					buf = regex.Comp(`(?s)^---+\n(.*?)\n---+\n`).RepFunc(buf, func(data func(int) []byte) []byte {
 						err := yaml.Unmarshal(data(1), &pageOnlyConfig)
 						if err != nil {
-							// fmt.Println(err)
 							*compErr = errors.Join(*compErr, err)
 						}
 						return []byte{}
@@ -149,6 +240,11 @@ func compilePage(src, dist string, config *Config, wgAdd func(), wgDone func(), 
 					config.layout[name] = buf
 				}
 			}
+
+			/* if compPage != nil && len(compPage) != 0 {
+				compPage = compPage[1:]
+				break
+			} */
 		}
 	}
 
@@ -229,7 +325,7 @@ func compilePage(src, dist string, config *Config, wgAdd func(), wgDone func(), 
 	//todo: remove unused subpages from dist
 
 	for _, dir := range dirList {
-		compilePage(src+"/"+dir, dist+"/"+dir, config, wgAdd, wgDone, compErr, false)
+		compilePage(src+"/"+dir, dist+"/"+dir, config, wgAdd, wgDone, compPage, compErr, false)
 	}
 }
 
@@ -243,7 +339,6 @@ func compilePageDist(src, dist string, config *Config, compErr *error, init bool
 	// open dist file
 	file, err := os.OpenFile(distFile, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0755)
 	if err != nil {
-		// fmt.Println(err)
 		*compErr = errors.Join(*compErr, err)
 		return
 	}
