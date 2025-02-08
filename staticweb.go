@@ -489,7 +489,7 @@ func compilePageDist(src, dist string, config *Config, compErr *error, init bool
 	file.Sync()
 	file.Close()
 
-	if DebugMode || !(config.Opts["gzip"] || config.Opts["gziponly"]) {
+	if !(config.Opts["gzip"] || config.Opts["gziponly"]) {
 		return
 	}
 
@@ -508,7 +508,7 @@ func compilePageDist(src, dist string, config *Config, compErr *error, init bool
 
 			gz.Close()
 
-			if config.Opts["gziponly"] {
+			if !DebugMode && config.Opts["gziponly"] {
 				os.Remove(dist + "/index.html")
 			}
 		}
