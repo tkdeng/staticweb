@@ -1,6 +1,8 @@
 package staticweb
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"log"
 	"os"
@@ -12,15 +14,17 @@ import (
 	_ "embed"
 
 	"github.com/gomarkdown/markdown"
-	"github.com/gomarkdown/markdown/html"
+	mdhtml "github.com/gomarkdown/markdown/html"
 	"github.com/gomarkdown/markdown/parser"
-	"github.com/tdewolff/minify/v2/minify"
+	"github.com/tdewolff/minify/v2"
+	"github.com/tdewolff/minify/v2/html"
 	regex "github.com/tkdeng/goregex"
 	"github.com/tkdeng/goutil"
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
+	Opts map[string]bool
 	Vars map[string]string
 	Meta map[string]string
 
@@ -250,9 +254,14 @@ func compilePage(src, dist string, config *Config, wgAdd func(), wgDone func(), 
 
 	// clone config data
 	pageConfig := Config{
+		Opts:   map[string]bool{},
 		Vars:   map[string]string{},
 		Meta:   map[string]string{},
 		layout: map[string][]byte{},
+	}
+
+	for key, val := range config.Opts {
+		pageConfig.Opts[key] = val
 	}
 
 	for key, val := range config.Vars {
@@ -273,6 +282,12 @@ func compilePage(src, dist string, config *Config, wgAdd func(), wgDone func(), 
 	}
 
 	// merge page only config
+	if pageOnlyConfig.Vars != nil {
+		for key, val := range pageOnlyConfig.Opts {
+			pageConfig.Opts[key] = val
+		}
+	}
+
 	if pageOnlyConfig.Vars != nil {
 		for key, val := range pageOnlyConfig.Vars {
 			pageConfig.Vars[key] = val
@@ -474,8 +489,12 @@ func compilePageDist(src, dist string, config *Config, compErr *error, init bool
 	file.Sync()
 	file.Close()
 
+	if DebugMode || !(config.Opts["gzip"] || config.Opts["gziponly"]) {
+		return
+	}
+
 	// compress to gzip
-	/* if buf, err := os.ReadFile(dist + "/index.html"); err == nil {
+	if buf, err := os.ReadFile(dist + "/index.html"); err == nil {
 		gz, err := os.OpenFile(dist+"/index.html.gz", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0755)
 		if err != nil {
 			*compErr = errors.Join(*compErr, err)
@@ -486,11 +505,14 @@ func compilePageDist(src, dist string, config *Config, compErr *error, init bool
 		if w, err := gzip.NewWriterLevel(gz, 6); err == nil {
 			w.Write(buf)
 			w.Close()
-		}
 
-		gz.Close()
-		os.Remove(dist + "/index.html")
-	} */
+			gz.Close()
+
+			if config.Opts["gziponly"] {
+				os.Remove(dist + "/index.html")
+			}
+		}
+	}
 }
 
 func compileHTML(buf *[]byte) {
@@ -500,8 +522,22 @@ func compileHTML(buf *[]byte) {
 		return
 	}
 
-	if m, err := minify.HTML(string(*buf)); err == nil {
+	/* if m, err := minify.HTML(string(*buf)); err == nil {
 		*buf = []byte(m)
+	} */
+
+	m := minify.New()
+	m.AddFunc("text/html", html.Minify)
+
+	m.Add("text/html", &html.Minifier{
+		KeepQuotes:       true,
+		KeepDocumentTags: true,
+		KeepEndTags:      true,
+	})
+
+	var b bytes.Buffer
+	if err := m.Minify("text/html", &b, bytes.NewBuffer(*buf)); err == nil {
+		*buf = b.Bytes()
 	}
 }
 
@@ -512,9 +548,9 @@ func compileMarkdown(buf *[]byte) {
 	doc := p.Parse(*buf)
 
 	// create HTML renderer with extensions
-	htmlFlags := html.CommonFlags | html.HrefTargetBlank
-	opts := html.RendererOptions{Flags: htmlFlags}
-	renderer := html.NewRenderer(opts)
+	htmlFlags := mdhtml.CommonFlags | mdhtml.HrefTargetBlank
+	opts := mdhtml.RendererOptions{Flags: htmlFlags}
+	renderer := mdhtml.NewRenderer(opts)
 
 	*buf = markdown.Render(doc, renderer)
 }

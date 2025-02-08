@@ -1,3 +1,7 @@
+opts:
+  gzip: true
+  gziponly: false
+
 meta:
   SiteTitle: "Site Title"
   AppTitle: "Site App"
